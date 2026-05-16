@@ -1,0 +1,263 @@
+-- ============================================
+-- DATABASE & SCHEMA
+-- ============================================
+
+CREATE OR REPLACE DATABASE INSURANCE_DB;
+
+USE DATABASE INSURANCE_DB;
+
+CREATE OR REPLACE SCHEMA CLAIMS_ANALYTICS;
+
+USE SCHEMA CLAIMS_ANALYTICS;
+
+-- ============================================
+-- TABLE CREATION
+-- ============================================
+
+CREATE OR REPLACE TABLE INSURANCE_DATASET (
+    CLAIM_ID VARCHAR,
+    CUSTOMER_ID VARCHAR,
+    CUSTOMER_NAME VARCHAR,
+    AGE NUMBER,
+    GENDER VARCHAR,
+    POLICY_TYPE VARCHAR,
+    CLAIM_AMOUNT NUMBER(12,2),
+    CLAIM_STATUS VARCHAR,
+    FRAUD_REPORTED VARCHAR,
+    RISK_LEVEL VARCHAR,
+    STATE VARCHAR,
+    AGENT_NAME VARCHAR,
+    INCIDENT_TYPE VARCHAR,
+    INCIDENT_DATE DATE,
+    POLICY_PREMIUM NUMBER(10,2),
+    HOSPITAL_OR_GARAGE VARCHAR,
+    POLICE_REPORT VARCHAR,
+    POLICY_START_DATE DATE
+);
+
+-- ============================================
+-- LOAD CSV FILE FROM STAGE
+-- ============================================
+
+-- First upload CSV into Snowflake stage
+
+CREATE OR REPLACE STAGE INSURANCE_STAGE;
+
+-- Then use Snowflake UI:
+-- Data > Add Data > Upload Files
+
+-- ============================================
+-- FILE FORMAT
+-- ============================================
+
+CREATE OR REPLACE FILE FORMAT CSV_FORMAT
+TYPE = CSV
+FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+SKIP_HEADER = 1;
+
+-- ============================================
+-- COPY DATA INTO TABLE
+-- ============================================
+
+COPY INTO INSURANCE_DATASET
+FROM @INSURANCE_STAGE
+FILE_FORMAT = (FORMAT_NAME = CSV_FORMAT);
+
+-- ============================================
+-- KPI 1 : TOTAL CLAIMS
+-- ============================================
+
+SELECT 
+    COUNT(CLAIM_ID) AS TOTAL_CLAIMS
+FROM INSURANCE_DATASET;
+
+-- ============================================
+-- KPI 2 : TOTAL CLAIM AMOUNT
+-- ============================================
+
+SELECT 
+    SUM(CLAIM_AMOUNT) AS TOTAL_CLAIM_AMOUNT
+FROM INSURANCE_DATASET;
+
+-- ============================================
+-- PIE CHART :
+-- COUNT OF CLAIM_ID BY CLAIM_STATUS
+-- ============================================
+
+SELECT 
+    CLAIM_STATUS,
+    COUNT(CLAIM_ID) AS TOTAL_CLAIMS
+FROM INSURANCE_DATASET
+GROUP BY CLAIM_STATUS
+ORDER BY TOTAL_CLAIMS DESC;
+
+-- ============================================
+-- STACKED COLUMN CHART :
+-- COUNT OF CLAIM_ID BY POLICY_TYPE
+-- AND FRAUD_REPORTED
+-- ============================================
+
+SELECT 
+    POLICY_TYPE,
+    FRAUD_REPORTED,
+    COUNT(CLAIM_ID) AS CLAIM_COUNT
+FROM INSURANCE_DATASET
+GROUP BY POLICY_TYPE, FRAUD_REPORTED
+ORDER BY POLICY_TYPE;
+
+-- ============================================
+-- BAR CHART :
+-- COUNT OF CLAIM_ID BY POLICY_TYPE
+-- ============================================
+
+SELECT 
+    POLICY_TYPE,
+    COUNT(CLAIM_ID) AS CLAIM_COUNT
+FROM INSURANCE_DATASET
+GROUP BY POLICY_TYPE
+ORDER BY CLAIM_COUNT DESC;
+
+-- ============================================
+-- FILTER / SLICER DATA
+-- ============================================
+
+SELECT DISTINCT POLICY_TYPE
+FROM INSURANCE_DATASET;
+
+SELECT DISTINCT CLAIM_STATUS
+FROM INSURANCE_DATASET;
+
+SELECT DISTINCT RISK_LEVEL
+FROM INSURANCE_DATASET;
+
+SELECT DISTINCT STATE
+FROM INSURANCE_DATASET;
+
+-- ============================================
+-- HIGH RISK CLAIM ANALYSIS
+-- ============================================
+
+SELECT 
+    RISK_LEVEL,
+    COUNT(*) AS TOTAL_CASES,
+    SUM(CLAIM_AMOUNT) AS TOTAL_AMOUNT
+FROM INSURANCE_DATASET
+GROUP BY RISK_LEVEL
+ORDER BY TOTAL_AMOUNT DESC;
+
+-- ============================================
+-- FRAUD CLAIM ANALYSIS
+-- ============================================
+
+SELECT 
+    FRAUD_REPORTED,
+    COUNT(*) AS TOTAL_CASES,
+    SUM(CLAIM_AMOUNT) AS FRAUD_AMOUNT
+FROM INSURANCE_DATASET
+GROUP BY FRAUD_REPORTED;
+
+-- ============================================
+-- STATE WISE CLAIM ANALYSIS
+-- ============================================
+
+SELECT 
+    STATE,
+    COUNT(CLAIM_ID) AS TOTAL_CLAIMS,
+    SUM(CLAIM_AMOUNT) AS TOTAL_AMOUNT
+FROM INSURANCE_DATASET
+GROUP BY STATE
+ORDER BY TOTAL_AMOUNT DESC;
+
+-- ============================================
+-- POLICY TYPE CLAIM AMOUNT
+-- ============================================
+
+SELECT 
+    POLICY_TYPE,
+    SUM(CLAIM_AMOUNT) AS TOTAL_AMOUNT
+FROM INSURANCE_DATASET
+GROUP BY POLICY_TYPE
+ORDER BY TOTAL_AMOUNT DESC;
+
+-- ============================================
+-- MONTHLY CLAIM TREND
+-- ============================================
+
+SELECT 
+    MONTH(INCIDENT_DATE) AS MONTH_NO,
+    MONTHNAME(INCIDENT_DATE) AS MONTH_NAME,
+    COUNT(CLAIM_ID) AS TOTAL_CLAIMS,
+    SUM(CLAIM_AMOUNT) AS TOTAL_AMOUNT
+FROM INSURANCE_DATASET
+GROUP BY MONTH(INCIDENT_DATE), MONTHNAME(INCIDENT_DATE)
+ORDER BY MONTH_NO;
+
+-- ============================================
+-- AGENT PERFORMANCE
+-- ============================================
+
+SELECT 
+    AGENT_NAME,
+    COUNT(CLAIM_ID) AS TOTAL_HANDLED,
+    SUM(CLAIM_AMOUNT) AS TOTAL_AMOUNT
+FROM INSURANCE_DATASET
+GROUP BY AGENT_NAME
+ORDER BY TOTAL_AMOUNT DESC;
+
+-- ============================================
+-- APPROVED CLAIMS ONLY
+-- ============================================
+
+SELECT *
+FROM INSURANCE_DATASET
+WHERE CLAIM_STATUS = 'Approved';
+
+-- ============================================
+-- REJECTED CLAIMS ONLY
+-- ============================================
+
+SELECT *
+FROM INSURANCE_DATASET
+WHERE CLAIM_STATUS = 'Rejected';
+
+-- ============================================
+-- FRAUD DETECTED CLAIMS
+-- ============================================
+
+SELECT *
+FROM INSURANCE_DATASET
+WHERE FRAUD_REPORTED = 'True';
+
+-- ============================================
+-- VIEW CREATION FOR POWER BI
+-- ============================================
+
+CREATE OR REPLACE VIEW VW_INSURANCE_DASHBOARD AS
+SELECT
+    CLAIM_ID,
+    CUSTOMER_ID,
+    CUSTOMER_NAME,
+    AGE,
+    GENDER,
+    POLICY_TYPE,
+    CLAIM_AMOUNT,
+    CLAIM_STATUS,
+    FRAUD_REPORTED,
+    RISK_LEVEL,
+    STATE,
+    AGENT_NAME,
+    INCIDENT_TYPE,
+    INCIDENT_DATE
+FROM INSURANCE_DATASET;
+
+-- ============================================
+-- CONNECT POWER BI TO SNOWFLAKE
+-- ============================================
+
+-- Power BI Steps:
+-- Home > Get Data > Snowflake
+-- Server : <your_account>.snowflakecomputing.com
+-- Warehouse : COMPUTE_WH
+-- Database : INSURANCE_DB
+-- Schema : CLAIMS_ANALYTICS
+-- Table/View : VW_INSURANCE_DASHBOARD
